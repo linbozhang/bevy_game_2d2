@@ -23,6 +23,13 @@
 | experiment | /ɪkˈspɛrəmənt/ | 实验；尝试 |
 | payoff | /ˈpeɪˌɔf/ | 回报；值得的结果 |
 | repetition | /ˌrɛpəˈtɪʃən/ | 重复 |
+| hundreds | /ˈhʌndrədz/ | 成百上千；大量 |
+| fine-tuning | /ˈfaɪn ˌtunɪŋ/ | 精调；细调 |
+| not quite. | /nɑt ˈkwaɪt/ | 还不太对；不完全是 |
+| cram | /kræm/ | 硬塞；突击式死记 |
+| massive | /ˈmæsɪv/ | 大规模的；庞大的 |
+| manageable | /ˈmænɪdʒəbəl/ | 可管理的；规模可控的 |
+| from the ground up | /frʌm ðə ɡraʊnd ʌp/ | 从零开始；自下而上 |
 
 ## WFC / 程序化生成
 
@@ -53,6 +60,19 @@
 | props | /prɑps/ | 场景道具；摆设物 * |
 | groundwork | /ˈɡraʊndˌwɜrk/ | 基础性铺垫（原文或写作 ground work） |
 | infrastructure | /ˈɪnfərəˌstrʌktʃər/ | 基础设施；底层支撑 |
+| decorative | /ˈdɛkəˌreɪtɪv/ | 装饰性的（非功能性） * |
+| annotation | /ˌænəˈteɪʃən/ | 标注；注释 * |
+
+## 编程
+
+| English | 音标（美） | 中文 |
+| --- | --- | --- |
+| encapsulation | /ɪnˌkæpsjəˈleɪʃən/ | 封装 |
+| closures | /ˈkloʊʒərz/ | 闭包 |
+| integrity | /ɪnˈtɛɡrəti/ | 完整性；一致性 |
+| clause | /klɔz/ | 子句；条款 * |
+| synchronized | /ˈsɪŋkrəˌnaɪzd/ | 同步的 |
+| retrieve | /rɪˈtriv/ | 取回；检索 |
 
 ## 通用
 
@@ -64,27 +84,11 @@
 | appropriate | /əˈproʊpriət/ | 合适的；恰当的 |
 | specific | /spəˈsɪfɪk/ | 特定的；具体的 |
 | primarily | /praɪˈmɛrəli/ | 主要地；首先 |
+| the rest | /ðə rɛst/ | 其余部分；剩下的 |
+| concise | /kənˈsaɪs/ | 简洁的 |
 
 ## 存疑（请对照英文原文）
 
 | 原文 | 可能应为 | 音标（美） | 中文 |
 | --- | --- | --- | --- |
 | varge | large / merge / verge | — | 请核对原文后删除或改正此行 |
-
-hundreds
-fine-tuning
-annotation
-not quite.
-decorative
-the rest
-concise
-retrieve
-encapsulation
-closures
-integrity
-clause
-synchronized
-from the ground up
-cram
-massive
-manageable
