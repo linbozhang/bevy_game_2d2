@@ -4,6 +4,7 @@ const TILE_SIZE: u32 = 64;
 const WALK_FRAMES: usize = 9;
 const MOVE_SPEED: f32 = 140.0;
 const ANIM_DT: f32 = 0.1;
+const PLAYER_Z: f32 = 20.0;
 
 #[derive(Component)]
 struct Player;
@@ -52,7 +53,7 @@ fn spawn_player(
                 index: start_index,
             },
         ),
-        Transform::from_translation(Vec3::ZERO),
+        Transform::from_translation(Vec3::new(0., 0., PLAYER_Z)).with_scale(Vec3::splat(0.8)),
         Player,
         AnimationState {
             facing,
