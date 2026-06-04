@@ -286,6 +286,148 @@ flowchart LR
 
 ---
 
+## 核心类型：`TextureAtlasLayout` 与 `ModelsAssets`
+
+`ModelsAssets` 来自 **`bevy_procedural_tilemaps`**（不是 Bevy 核心类型）。`TextureAtlasLayout` 是 **Bevy 自带** 的图集布局资源。
+
+### `TextureAtlasLayout`（Bevy）
+
+#### 是什么
+
+`TextureAtlasLayout` 描述**一张大图**如何切成多块小图。每块对应一个 **atlas 索引** 和 UV 矩形，存放在 `Assets<TextureAtlasLayout>` 中，通过 `Handle<TextureAtlasLayout>` 引用。
+
+#### 做什么
+
+| 作用 | 说明 |
+| --- | --- |
+| 定义切片 | 每张子图在图集里的像素区域（`URect`） |
+| 提供索引 | `TextureAtlas::with_index(3)` 表示使用第 3 块 |
+| 配合渲染 | 与 `Handle<Image>` 一起交给 `Sprite::from_atlas_image`，GPU 只绘制对应区域 |
+
+#### 在本项目中的两种用法
+
+**地图瓦片**（`src/map/assets.rs`）——不规则布局，按 `TILEMAP` 逐个登记：
+
+```rust
+let mut layout = TextureAtlasLayout::new_empty(TILEMAP.atlas_size());
+for index in 0..TILEMAP.sprites.len() {
+    layout.add_texture(TILEMAP.sprite_rect(index));
+}
+let layout = atlas_layouts.add(layout);
+```
+
+**玩家动画**（`src/player.rs`）——规则网格，使用 `from_grid`：
+
+```rust
+let layout = atlas_layouts.add(TextureAtlasLayout::from_grid(
+    UVec2 { x: TILE_SIZE, y: TILE_SIZE },
+    WALK_FRAMES as u32,
+    12,
+    None,
+    None,
+));
+```
+
+可以记成：**`tilemap.png` 是原料，`TextureAtlasLayout` 是切法说明书，`Sprite` 按索引取其中一块来画。**
+
+---
+
+### `ModelsAssets`（bevy_procedural_tilemaps）
+
+#### 是什么
+
+`ModelsAssets<A>` 是 **WFC 模型索引 → 可生成实体资源** 的映射表（内部为 `HashMap<ModelIndex, Vec<ModelAsset<A>>>`）。
+
+本工程里 `A = Sprite`（Bevy 为 `Sprite` 实现了插件的 `BundleInserter` trait）。
+
+#### 做什么
+
+| 作用 | 说明 |
+| --- | --- |
+| 桥接 WFC 与画面 | WFC 只产出 `ModelIndex`；`ModelsAssets` 决定「这个模型要生成什么」 |
+| 支持多实体 | 一个 model 可对应多个 `ModelAsset`（例如大树占 2×2 格） |
+| 携带生成信息 | 每个 `ModelAsset` 含渲染 bundle、网格/世界偏移、额外组件回调 |
+
+`ModelAsset` 各字段含义：
+
+| 字段 | 含义 |
+| --- | --- |
+| `assets_bundle` | 插入实体上的渲染数据（本项目中为带图集的 `Sprite`） |
+| `grid_offset` | 相对格子中心的网格偏移 |
+| `world_offset` | 相对格子中心的世界坐标细调 |
+| `spawn_commands` | 生成后追加组件的回调（碰撞等） |
+
+#### 在本项目中的用法
+
+`load_assets` 把 `rules` 里的逻辑定义绑到图集上（`src/map/assets.rs`）：
+
+```rust
+models_assets.add(
+    model_index,
+    ModelAsset {
+        assets_bundle: tilemap_handles.sprite(atlas_index),
+        grid_offset,
+        world_offset: offset,
+        spawn_commands: components_spawner,
+    },
+);
+```
+
+WFC 求解完成后，`NodesSpawner` 根据 `instance.model_index` 查表并生成实体（插件 `spawner.rs`）：
+
+```rust
+let Some(node_assets) = spawner.assets.get(&instance.model_index) else {
+    return;
+};
+// 对每个 ModelAsset 计算位置并 insert_bundle ...
+```
+
+可以记成：**WFC 选「模型编号」，`ModelsAssets` 查表决定「画哪张图、放在哪」。**
+
+---
+
+### 二者关系
+
+```mermaid
+flowchart LR
+    subgraph bevy["Bevy 渲染层"]
+        IMG["Handle Image<br/>tilemap.png"]
+        LAY["TextureAtlasLayout<br/>切块定义"]
+        SPR["Sprite<br/>image + atlas index"]
+    end
+
+    subgraph procgen["bevy_procedural_tilemaps"]
+        WFC["WFC 输出 ModelIndex"]
+        MA["ModelsAssets"]
+        NS["NodesSpawner"]
+        ENT["Entity 实体"]
+    end
+
+    IMG --> SPR
+    LAY --> SPR
+    SPR -->|"存入 ModelAsset.assets_bundle"| MA
+    WFC --> MA
+    MA --> NS
+    NS --> ENT
+```
+
+| 类型 | 所属 | 回答的问题 |
+| --- | --- | --- |
+| `TextureAtlasLayout` | Bevy | **大图怎么切？第 N 块在哪？** |
+| `ModelsAssets` | 插件 | **WFC 第 N 号模型要生成什么、放哪？** |
+
+与本工程数据流的对应：
+
+1. **`tilemap.rs`**：sprite 名 → 像素坐标（逻辑表）
+2. **`TextureAtlasLayout`**：坐标 → atlas 索引（Bevy 资源）
+3. **`TerrainModelBuilder` + rules**：WFC 模型 + `SpawnableAsset` 名
+4. **`ModelsAssets`**：`model_index` → 带图集的 `Sprite` + 偏移
+5. **`NodesSpawner`**：WFC 完成后在场景中 `spawn` 实体
+
+若没有 `TextureAtlasLayout`，`Sprite` 不知道从大图哪一块取样；若没有 `ModelsAssets`，WFC 算完格子也不会自动变成可见瓦片。
+
+---
+
 ## 设计要点
 
 1. **WFC 只关心 sockets + models**，不关心 PNG；贴图名只在 `SpawnableAsset` 里登记，生成后再由 `load_assets` 解析。
