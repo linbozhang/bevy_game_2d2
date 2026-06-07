@@ -1,6 +1,8 @@
 # 地图模块架构说明
 
 本文档说明 `src/map` 下各模块的职责、关系与调用方式。工程使用 [bevy_procedural_tilemaps](https://crates.io/crates/bevy_procedural_tilemaps) 做 WFC（Wave Function Collapse）程序化地图生成。
+
+若阅读时对图集加载、socket 命名、`create_model` 返回值、`load_assets` 下标等有疑问，可直接跳至文末 **[常见问题（阅读答疑）](#常见问题阅读答疑)**。
 ---
 
 ## 模块一览
@@ -166,6 +168,8 @@ models_assets.add(model_index, ModelAsset {
 
 **被谁用：** 仅 `rules.rs` 的各 `build_*_layer` — 定义 model 六面插槽 + `socket_collection.add_connections` 邻接规则。
 
+> `dirt` / `grass` / `void` 等命名含义，以及为何需要 `void`，见 [Q3](#q3terrainsockets-为什么按-dirt--grass--void-等分组为什么需要-void-socket)。
+
 ---
 
 ### 4. `models` — 保证「模型」与「资源列表」下标对齐
@@ -184,6 +188,8 @@ self.assets.push(assets);
 
 - `RulesBuilder`（WFC 规则）
 - `load_assets`（按 `model_index` 绑图）
+
+> `create_model` 返回值为何常未使用、如何与 socket / sprite 关联，见 [Q4](#q4create_model-有返回值但-rulesrs-里大多没接住怎么和-socket_collectionsprite-关联)。
 
 ---
 
@@ -330,6 +336,8 @@ let layout = atlas_layouts.add(TextureAtlasLayout::from_grid(
 
 可以记成：**`tilemap.png` 是原料，`TextureAtlasLayout` 是切法说明书，`Sprite` 按索引取其中一块来画。**
 
+> 两个 `add`（`add_texture` vs `atlas_layouts.add`）的区别见 [Q1](#q1textureatlaslayout-与-resmutassetstextureatlaslayout-是什么关系为什么有两个-add)。
+
 ---
 
 ### `ModelsAssets`（bevy_procedural_tilemaps）
@@ -384,6 +392,8 @@ let Some(node_assets) = spawner.assets.get(&instance.model_index) else {
 
 可以记成：**WFC 选「模型编号」，`ModelsAssets` 查表决定「画哪张图、放在哪」。**
 
+> 内层循环多次 `models_assets.add(model_index, ...)` 是否重复，见 [Q2](#q2load_assets-里内层循环多次-models_assetsaddmodel_index-会重复吗)。
+
 ---
 
 ### 二者关系
@@ -425,6 +435,186 @@ flowchart LR
 5. **`NodesSpawner`**：WFC 完成后在场景中 `spawn` 实体
 
 若没有 `TextureAtlasLayout`，`Sprite` 不知道从大图哪一块取样；若没有 `ModelsAssets`，WFC 算完格子也不会自动变成可见瓦片。
+
+---
+
+## 常见问题（阅读答疑）
+
+阅读上文时容易产生的几个疑问，集中说明如下。
+
+### Q1：`TextureAtlasLayout` 与 `ResMut<Assets<TextureAtlasLayout>>` 是什么关系？为什么有两个 `add`？
+
+`prepare_tilemap_handles` 里同时出现 `layout.add_texture(...)` 和 `atlas_layouts.add(layout)`，层次不同：
+
+| 调用 | 操作对象 | 实际数据结构 | 作用 |
+| --- | --- | --- | --- |
+| `TextureAtlasLayout::new_empty(size)` | 单份 layout | `{ size: UVec2, textures: Vec<URect> }` | 创建空的「切图说明书」 |
+| `layout.add_texture(rect)` | 这一份 layout 的 `textures` | `Vec<URect>`（push 一块子图矩形） | 登记第 N 块瓦片在大图里的像素区域 |
+| `atlas_layouts.add(layout)` | Bevy 全局 `Assets<TextureAtlasLayout>` | 资源仓库（可存多份 layout） | 把整份 layout 注册进引擎，返回 `Handle<TextureAtlasLayout>` |
+
+可以记成：
+
+- **`TextureAtlasLayout`** = 一份切法说明书（普通 Rust 结构体，先在栈上建好）
+- **`Assets<TextureAtlasLayout>`** = Bevy ECS 里的全局资源表（单例 Resource）
+- **`ResMut<...>`** = 「可变借用这个 Resource」的权限包装
+- **`Handle<TextureAtlasLayout>`** = 仓库里的引用句柄，类似主键 ID
+
+流程：**本地建好 layout → `atlas_layouts.add` 注册 → 拿到 `Handle` 供 `Sprite` 跨系统引用**。
+
+两个 `add` 不是重复逻辑：`add_texture` 往**一份 layout 的切片列表**里追加条目；`atlas_layouts.add` 把**整份 layout** 放进 Bevy 资源库。
+
+---
+
+### Q2：`load_assets` 里内层循环多次 `models_assets.add(model_index, ...)`，会重复吗？
+
+**会多次 `add` 同一个 `model_index`，但是刻意的，不是 bug。**
+
+`ModelsAssets` 内部是 `HashMap<ModelIndex, Vec<ModelAsset<A>>>`（一对多），`add` 的实现是：
+
+- 第一次 `add(index, ...)` → `insert(index, vec![...])`
+- 之后同一 `index` → `push(...)` 追加，**不会覆盖**
+
+这与输入类型 `Vec<Vec<SpawnableAsset>>` 一一对应：
+
+| 层级 | 含义 |
+| --- | --- |
+| 外层 `Vec` 下标 | WFC 的 `model_index` |
+| 内层 `Vec<SpawnableAsset>` | 该 model 被放置时要生成**几个实体** |
+
+大多数瓦片内层只有 1 个元素（如 `vec![SpawnableAsset::new("dirt")]`），每个 `model_index` 只 `add` 一次。
+
+多格物体内层有多个元素，例如小树（`rules.rs`）：
+
+```rust
+vec![
+    SpawnableAsset::new("small_tree_bottom"),
+    SpawnableAsset::new("small_tree_top").with_grid_offset(GridDelta::new(0, 1, 0)),
+]
+```
+
+内层循环跑 2 次，**两次都用同一个 `model_index`** → `ModelsAssets[model_index]` 最终是 `[树干, 树冠]`。WFC 选中该 model **一次**，`spawn_node` 会 spawn **两个 Entity**。
+
+---
+
+### Q3：`TerrainSockets` 为什么按 dirt / grass / void 等分组？为什么需要 `void` Socket？
+
+#### Socket 本质
+
+在 WFC 里，`Socket` 只是**连接类型 ID**（不透明整数），引擎本身没有「泥土」「空白」的语义。`TerrainSockets` 里的 `dirt`、`grass`、`void` 等是**项目里的命名分组**，方便在 `rules.rs` 写可读规则。
+
+每个 model 六面（±X、±Y、±Z）各贴一个 socket；相邻格子能否拼接，取决于面对面两个 socket 是否在 `SocketCollection` 里登记为可连接。
+
+#### 为什么分组
+
+地图是 3D 网格 `GRID_X × GRID_Y × GRID_Z`（Z 轴 5 层），不同层需要不同 socket 语义：
+
+| Socket 类型 | 方向 | 作用 | 例子 |
+| --- | --- | --- | --- |
+| `layer_up` / `layer_down` | 竖直（Z） | 上下层如何叠放 | `dirt.layer_up` ↔ `grass.layer_down` |
+| `material` | 水平 | 同材质内部互联 | 草块 ↔ 草块 |
+| `void_and_*` / `*_and_void` | 水平 | 材质边缘 ↔ 空白 | 草边 ↔ 空白格 |
+| 特殊 socket | 视情况 | 特定过渡或组合 | `grass_fill_up`、`big_tree_1_base` |
+
+#### 为什么需要 `void`
+
+`void` 表示**「这一层在此处什么都没有」**，是稀疏层（草、水、props）的核心机制。
+
+**1. Void Model — 不可见的占位 model**
+
+```rust
+// rules.rs — grass layer
+terrain_model_builder.create_model(
+    SocketsCartesian3D::Simple {
+        x_pos: terrain_sockets.void,
+        // ... 水平四面都是 void
+        z_neg: terrain_sockets.grass.layer_down,
+    },
+    Vec::new(),   // 不生成任何 sprite
+);
+```
+
+WFC 每个格子必须选一个 model。草层不是每格都有草，所以需要一种「空白 model」：水平方向全是 `void`，不画任何东西，但竖直方向仍参与层间连接。
+
+连接规则 `(void, vec![void])`：**void 只能接 void**，空白区域连成一片。
+
+**2. 边缘 tile 的外侧也贴 void**
+
+草边瓦片朝外的面用 `void`，朝内的面用 `material` 或 `void_and_grass`，WFC 才能自动选对 `corner_out` / `side` 等边缘 sprite。
+
+**3. 各层差异**
+
+| 层 | 是否有 void | 原因 |
+| --- | --- | --- |
+| dirt | 否 | 整层实心铺满，每格都是泥土 |
+| grass / water / props | 是 | 稀疏分布，需要「有 / 无」两种 model + 正确拼边 |
+
+`void_and_grass` ↔ `grass_and_void` 成对出现：虽然 `add_connection` 是双向的，但每个 model 各面贴哪个 socket 可以不同，从而区分外角、内角、直边等边缘 art。
+
+**Socket 与 sprite 无直接关联** — socket 只约束 WFC 能选哪种 model；贴什么图由 `model_index` → `ModelsAssets` 决定。
+
+---
+
+### Q4：`create_model` 有返回值，但 `rules.rs` 里大多没接住，怎么和 `socket_collection`、sprite 关联？
+
+返回值 **`&mut Model` 主要用于链式调用**（如 `.with_weight(20.)`）。真正关联靠 **副作用 + 下标对齐 + Socket ID 嵌入**，不依赖保存返回值。
+
+#### `create_model` 每次调用做什么
+
+```rust
+// models.rs
+let model_ref = self.models.create(template);  // → ModelCollection 追加，分配 model_index
+self.assets.push(assets);                       // → assets 列表同步追加
+model_ref                                       // 可选：链式 .with_weight()
+```
+
+#### 三条并行数据线
+
+`build_world()` 结束时产出三件套，在 `setup_generator` 里分别使用：
+
+```mermaid
+flowchart TB
+    subgraph rules["rules.rs 注册阶段"]
+        CM["create_model(template, assets)"]
+        SC["socket_collection.add_connections(...)"]
+    end
+
+    subgraph three["三条并行数据"]
+        M["ModelCollection<br/>WFC 拓扑 + 权重"]
+        A["Vec&lt;Vec&lt;SpawnableAsset&gt;&gt;<br/>sprite 名列表"]
+        S["SocketCollection<br/>哪些 socket 能互连"]
+    end
+
+    CM --> M
+    CM --> A
+    SC --> S
+    CM -.->|"template 里已嵌入 Socket ID"| S
+```
+
+| 关联 | 机制 | 是否需要返回值 |
+| --- | --- | --- |
+| **Model ↔ Socket** | 创建 model 时 `SocketsCartesian3D` 里的 Socket ID **写进 model 模板**；`add_connections` 单独维护全局互连规则；二者在 `RulesBuilder::build()` 合并 | 否 |
+| **Model ↔ Sprite** | `create_model` 同步 push `models` 与 `assets`，**相同下标 = model_index** | 否 |
+| **Socket ↔ Sprite** | **无直接关联** | — |
+
+#### 下标对齐示例
+
+| model_index | Model（WFC 拓扑） | assets_definitions[i] |
+| --- | --- | --- |
+| 0 | dirt | `["dirt"]` |
+| 1 | grass void（空白） | `[]` |
+| 2 | green_grass | `["green_grass"]` |
+| 3 | green_grass_corner_out_tl | `["green_grass_corner_out_tl"]` |
+| … | … | … |
+
+第 N 次 `create_model` = `model_index N` = `assets_definitions[N]`，无需保存返回值。
+
+#### 运行时链路
+
+1. WFC 每格输出 `ModelInstance { model_index, rotation }`
+2. `load_assets` 已把 `assets_definitions[model_index]` 转成 `ModelsAssets[model_index]`
+3. `NodesSpawner` / `spawn_node` 按 `instance.model_index` 查表，生成带 `Sprite` 的 Entity
+
+可以记成：**注册时各写各的，运行时靠 `model_index` 查 sprite，靠 socket 规则决定 WFC 能选哪个 index。**
 
 ---
 
