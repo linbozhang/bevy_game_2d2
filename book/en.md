@@ -92,3 +92,20 @@
 | 原文 | 可能应为 | 音标（美） | 中文 |
 | --- | --- | --- | --- |
 | varge | large / merge / verge | — | 请核对原文后删除或改正此行 |
+
+schema 
+presently
+with the animation schema in place
+inspects
+sequentially
+execute
+entry
+instantly
+diagonally
+moving mostly right with a bit of up?
+convention
+error-prone
+crucial
+scenarios
+Coordination
+communist

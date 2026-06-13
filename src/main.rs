@@ -1,6 +1,5 @@
+mod characters;
 mod map;
-mod player;
-
 use bevy::{
     prelude::*,
     window::{Window, WindowPlugin, WindowResolution},
@@ -9,7 +8,6 @@ use bevy::{
 use bevy_procedural_tilemaps::prelude::*;
 
 use crate::map::generate::{map_pixel_dimensions, setup_generator};
-use crate::player::PlayerPlugin;
 
 fn main() {
     let map_size = map_pixel_dimensions();
@@ -33,8 +31,8 @@ fn main() {
                 .set(ImagePlugin::default_linear()),
         )
         .add_plugins(ProcGenSimplePlugin::<Cartesian3D, Sprite>::default())
+        .add_plugins(characters::CharactersPlugin)
         .add_systems(Startup, (setup_camera, setup_generator))
-        .add_plugins(PlayerPlugin)
         .run();
 }
 
